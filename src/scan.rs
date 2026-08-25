@@ -1,0 +1,352 @@
+//! The five scanners.
+//!
+//! Each takes text and returns findings; none of them decides anything. Turning
+//! findings into allow/warn/block is [`crate::Config::decide`]'s job, in one
+//! place, so a mode change cannot mean five different things.
+
+use crate::normalize;
+use crate::rules::{Rule, Validator, EXFIL_HOSTS};
+use crate::{Config, Error, Finding, Result, Scanner, Severity};
+use regex::Regex;
+
+pub struct Compiled {
+    pub rule: &'static Rule,
+    pub re: Regex,
+}
+
+/// Compile a table, skipping rules the config suppresses — a suppressed rule
+/// should not cost anything at match time either.
+pub fn compile(table: &'static [Rule], cfg: &Config) -> Result<Vec<Compiled>> {
+    table
+        .iter()
+        .filter(|r| !cfg.suppress.iter().any(|s| s == r.id))
+        .map(|rule| {
+            Regex::new(rule.regex)
+                .map(|re| Compiled { rule, re })
+                .map_err(|e| Error(format!("rule `{}`: {e}", rule.id)))
+        })
+        .collect()
+}
+
+/// Mask a match so a finding can be logged, shown and shipped to a UI without
+/// becoming a second copy of the secret.
+fn mask(s: &str) -> String {
+    let n = s.chars().count();
+    if n <= 8 {
+        return "*".repeat(n.max(1));
+    }
+    let head: String = s.chars().take(4).collect();
+    let tail: String = s.chars().skip(n - 2).collect();
+    format!("{head}{}{tail}", "*".repeat((n - 6).min(24)))
+}
+
+fn finding(
+    scanner: Scanner,
+    rule: &Rule,
+    detail: String,
+    sample: String,
+    start: usize,
+    end: usize,
+) -> Finding {
+    Finding {
+        scanner,
+        rule: rule.id.into(),
+        title: rule.title.into(),
+        severity: rule.severity,
+        detail,
+        sample,
+        start,
+        end,
+    }
+}
+
+/// gitleaks' pre-filter: reject the haystack for a rule with a substring scan
+/// before paying for its regex. With ~40 secret rules this is the difference
+/// between a firewall you can put in front of every request and one you cannot.
+fn prefiltered(lower: &str, keywords: &[&str]) -> bool {
+    !keywords.is_empty() && !keywords.iter().any(|k| lower.contains(k))
+}
+
+// ── 1. Secrets, outbound ───────────────────────────────────────────────────
+
+/// Credentials in text on its way out. Offsets are into `text` itself, which is
+/// what makes [`crate::Firewall::redact`] able to mask in place.
+///
+/// `host` is where the text is headed: a provider key addressed to its own
+/// provider is the key being used, and reporting it would train the user to
+/// ignore this scanner.
+pub fn secrets(rules: &[Compiled], text: &str, host: Option<&str>, cfg: &Config) -> Vec<Finding> {
+    let lower = text.to_ascii_lowercase();
+    let mut out = Vec::new();
+    for c in rules {
+        if prefiltered(&lower, c.rule.keywords) {
+            continue;
+        }
+        if let Some(h) = host {
+            if c.rule.exempt_hosts.iter().any(|e| normalize::host_matches(h, e)) {
+                continue;
+            }
+        }
+        for m in c.re.find_iter(text).take(8) {
+            // The interesting part is the capture when the rule has one
+            // (`API_KEY = <this>`), the whole match when it does not.
+            let caps = c.re.captures_at(text, m.start());
+            let secret = caps
+                .as_ref()
+                .and_then(|c| c.get(1))
+                .map(|g| g.as_str())
+                .unwrap_or(m.as_str());
+
+            let floor = if c.rule.entropy > 0.0 { c.rule.entropy.max(cfg.entropy_threshold) } else { 0.0 };
+            if floor > 0.0 && normalize::entropy(secret) < floor {
+                continue;
+            }
+            let ok = match c.rule.validator {
+                Validator::None => true,
+                Validator::Luhn => normalize::luhn(m.as_str()),
+                Validator::Mod97 => normalize::mod97(m.as_str()),
+            };
+            if !ok {
+                continue;
+            }
+            out.push(finding(
+                Scanner::Secret,
+                c.rule,
+                format!("{} in outbound content", c.rule.title),
+                mask(secret),
+                m.start(),
+                m.end(),
+            ));
+        }
+    }
+    out
+}
+
+// ── 2. Prompt injection, inbound ───────────────────────────────────────────
+
+/// Instructions hidden in content the agent read. Run over every normalization
+/// fold (see [`normalize::folds`]), so one plain-language rule covers the
+/// zero-width, homoglyph, leetspeak and base64 spellings of the same payload.
+///
+/// Offsets are into the *normalized* text, not the original — the folds are
+/// what matched, and pretending otherwise would point a caller at the wrong
+/// bytes.
+pub fn injection(rules: &[Compiled], text: &str) -> Vec<Finding> {
+    let folds = normalize::folds(text);
+    let mut out: Vec<Finding> = Vec::new();
+    for (i, fold) in folds.iter().enumerate() {
+        let lower = fold.to_ascii_lowercase();
+        for c in rules {
+            if out.iter().any(|f| f.rule == c.rule.id) {
+                continue; // one finding per rule; the first fold that hit says it
+            }
+            if prefiltered(&lower, c.rule.keywords) {
+                continue;
+            }
+            let Some(m) = c.re.find(fold) else { continue };
+            let how = match i {
+                0 => "",
+                _ if Some(i) == folds.len().checked_sub(1) && fold != &folds[0] => " (base64-decoded)",
+                _ => " (obfuscated)",
+            };
+            out.push(finding(
+                Scanner::Injection,
+                c.rule,
+                format!("{}{how} in untrusted content", c.rule.title),
+                mask(m.as_str()),
+                m.start(),
+                m.end(),
+            ));
+        }
+    }
+    out
+}
+
+// ── 3. Hidden unicode, both directions ─────────────────────────────────────
+
+/// Characters that render as nothing. Split out from the injection scanner
+/// because it needs no rules and no folds: the *presence* of a unicode tag
+/// character in a tool result is the finding.
+pub fn hidden_unicode(text: &str) -> Vec<Finding> {
+    let found = normalize::invisibles(text);
+    if found.is_empty() {
+        return Vec::new();
+    }
+    // Tag characters and bidi overrides have no legitimate use in agent traffic
+    // and are the two that carry a real payload. The rest — zero-width joiners,
+    // soft hyphens — turn up in copy-pasted prose too, so they warn.
+    let smuggled = found.iter().any(|c| (0xE0000..=0xE007F).contains(c) || (0x202A..=0x202E).contains(c));
+    let list: Vec<String> = found.iter().take(6).map(|c| format!("U+{c:04X}")).collect();
+    vec![Finding {
+        scanner: Scanner::HiddenUnicode,
+        rule: if smuggled { "unicode-tag-smuggling".into() } else { "zero-width-characters".into() },
+        title: if smuggled { "Invisible unicode payload".into() } else { "Zero-width characters".into() },
+        severity: if smuggled { Severity::Critical } else { Severity::High },
+        detail: format!("{} invisible code point(s): {}", found.len(), list.join(", ")),
+        sample: list.join(","),
+        start: 0,
+        end: 0,
+    }]
+}
+
+// ── 4. Tool policy, outbound ───────────────────────────────────────────────
+
+/// Commands an agent should not be able to run without a human in the loop.
+/// The tool's own name is scanned along with its arguments, because half of
+/// these rules are about `bash` being called at all.
+pub fn tool_policy(rules: &[Compiled], name: &str, args: &str, cfg: &Config) -> Vec<Finding> {
+    let subject = format!("{name} {args}");
+    let lower = subject.to_ascii_lowercase();
+    let mut out = Vec::new();
+    for c in rules {
+        if prefiltered(&lower, c.rule.keywords) {
+            continue;
+        }
+        if let Some(m) = c.re.find(&subject) {
+            let mut f = finding(
+                Scanner::ToolPolicy,
+                c.rule,
+                format!("{} in `{name}`", c.rule.title),
+                mask(m.as_str()),
+                m.start(),
+                m.end(),
+            );
+            // Sending a token to the service that issued it is the token being
+            // used. Only the destination can tell that apart from theft, so
+            // this one rule is graded on where the command is pointed.
+            if c.rule.id == "env-secret-egress" {
+                let urls = urls_in(&subject);
+                let allowed = !urls.is_empty()
+                    && urls.iter().all(|u| {
+                        normalize::host_of(u).is_some_and(|h| {
+                            cfg.allow_list().iter().any(|a| normalize::host_matches(&h, a))
+                        })
+                    });
+                if allowed {
+                    f.severity = Severity::Low;
+                    f.detail = format!("{} in `{name}`, to an allowlisted destination", c.rule.title);
+                }
+            }
+            out.push(f);
+        }
+    }
+    out
+}
+
+// ── 5. Egress, outbound ────────────────────────────────────────────────────
+
+fn egress_finding(rule: &'static str, title: &str, sev: Severity, detail: String) -> Finding {
+    Finding {
+        scanner: Scanner::Egress,
+        rule: rule.into(),
+        title: title.into(),
+        severity: sev,
+        detail,
+        sample: String::new(),
+        start: 0,
+        end: 0,
+    }
+}
+
+/// Where the agent is trying to reach.
+pub fn egress(url: &str, cfg: &Config) -> Vec<Finding> {
+    let Some(host) = normalize::host_of(url) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+
+    if cfg.deny_hosts.iter().any(|d| normalize::host_matches(&host, d)) {
+        out.push(egress_finding("host-denied", "Denied destination", Severity::Critical,
+            format!("`{host}` is on the deny list")));
+    }
+    if EXFIL_HOSTS.iter().any(|d| normalize::host_matches(&host, d)) {
+        out.push(egress_finding("exfil-host", "Anonymous drop site", Severity::Critical,
+            format!("`{host}` accepts anonymous uploads — a one-hop exfiltration channel")));
+    }
+    if normalize::is_ssrf_target(&host) {
+        out.push(egress_finding("ssrf-target", "Internal / metadata address", Severity::Critical,
+            format!("`{host}` is a loopback, private or link-local address")));
+    }
+
+    // DNS tunnelling: the payload rides in a subdomain label, so the request
+    // looks ordinary to everything that only checks the registered domain.
+    let (ent, len) = normalize::max_label_entropy(&host);
+    if len >= 20 && ent >= cfg.subdomain_entropy_threshold {
+        out.push(egress_finding("subdomain-entropy", "High-entropy hostname", Severity::High,
+            format!("`{host}` carries a {len}-character random label ({ent:.1} bits/char) — the shape of DNS tunnelling")));
+    }
+
+    // A long high-entropy query is where an encoded secret rides out when the
+    // secret rules did not recognise its shape.
+    if let Some(q) = url.split_once('?').map(|(_, q)| q) {
+        let e = normalize::entropy(q);
+        if q.len() >= 48 && e >= 4.5 {
+            out.push(egress_finding("query-entropy", "High-entropy query string", Severity::High,
+                format!("{}-byte query at {e:.1} bits/char — an encoded payload rather than parameters", q.len())));
+        }
+    }
+    if url.len() > 2048 {
+        out.push(egress_finding("url-length", "Oversized URL", Severity::Medium,
+            format!("{} bytes of URL", url.len())));
+    }
+
+    // Strict mode is allowlist-only. In every other mode an unknown destination
+    // is inspected, not refused — that is the whole difference between the two.
+    if cfg.mode == crate::Mode::Strict
+        && !out.iter().any(|f| f.rule == "host-denied")
+        && !cfg.allow_list().iter().any(|a| normalize::host_matches(&host, a))
+    {
+        out.push(egress_finding("host-not-allowlisted", "Destination not on the allowlist", Severity::Critical,
+            format!("strict mode permits only the allowlist; `{host}` is not on it")));
+    }
+    out
+}
+
+/// Every URL in a blob of text — how a `curl` buried in a shell command reaches
+/// the egress scanner.
+pub fn urls_in(text: &str) -> Vec<&str> {
+    let mut out = Vec::new();
+    let mut rest = text;
+    while let Some(i) = rest.find("http") {
+        let tail = &rest[i..];
+        if tail.starts_with("http://") || tail.starts_with("https://") {
+            let end = tail
+                .find(|c: char| c.is_whitespace() || matches!(c, '"' | '\'' | '`' | '<' | '>' | ')' | ']' | '|' | ';'))
+                .unwrap_or(tail.len());
+            out.push(&tail[..end]);
+            rest = &tail[end..];
+        } else {
+            rest = &tail[4..];
+        }
+        if out.len() >= 16 {
+            break;
+        }
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn masking_never_reveals_the_middle() {
+        assert_eq!(mask("short"), "*****");
+        let m = mask("ghp_abcdefghijklmnopqrstuvwxyz012345");
+        assert!(m.starts_with("ghp_") && m.ends_with("45") && !m.contains("defg"), "{m}");
+    }
+
+    #[test]
+    fn urls_are_pulled_out_of_a_shell_command() {
+        let got = urls_in("curl -s https://a.example/x?y=1 | tee f && wget 'https://b.example/z'");
+        assert_eq!(got, vec!["https://a.example/x?y=1", "https://b.example/z"]);
+    }
+
+    #[test]
+    fn loopback_written_four_ways_is_still_loopback() {
+        let cfg = Config::default();
+        for u in ["http://127.0.0.1/", "http://localhost:8080/", "http://169.254.169.254/latest/meta-data/", "http://2130706433/"] {
+            assert!(egress(u, &cfg).iter().any(|f| f.rule == "ssrf-target"), "missed {u}");
+        }
+    }
+}

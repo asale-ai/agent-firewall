@@ -1,0 +1,46 @@
+[package]
+name = "agent-firewall"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.82"
+description = "A firewall for AI coding agents: secret exfiltration, prompt injection, hidden-unicode, dangerous tool calls and egress control, as a CLI and an embeddable SDK"
+authors = ["asale-ai"]
+license = "Apache-2.0"
+repository = "https://github.com/asale-ai/agent-firewall"
+homepage = "https://github.com/asale-ai/agent-firewall"
+readme = "README.md"
+keywords = ["firewall", "security", "llm", "agent", "dlp"]
+categories = ["command-line-utilities"]
+exclude = ["samples/", ".github/"]
+
+[lib]
+name = "agent_firewall"
+path = "src/lib.rs"
+
+[[bin]]
+name = "agent-firewall"
+path = "src/main.rs"
+required-features = ["cli"]
+
+[features]
+# `cargo install` and a bare `cargo build` both want the binary, so the CLI is
+# on by default. An embedder takes the engine alone with
+# `default-features = false`, which drops clap — a proxy has no use for it.
+default = ["cli"]
+cli = ["dep:clap"]
+
+[dependencies]
+regex = { version = "1", default-features = false, features = ["std", "perf", "unicode-case", "unicode-perl"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+clap = { version = "4", optional = true, default-features = false, features = [
+    "std", "derive", "help", "usage", "error-context",
+] }
+
+[profile.release]
+opt-level = "z"
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = true
