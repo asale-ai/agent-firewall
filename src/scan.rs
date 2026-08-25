@@ -168,25 +168,69 @@ pub fn injection(rules: &[Compiled], text: &str) -> Vec<Finding> {
 /// because it needs no rules and no folds: the *presence* of a unicode tag
 /// character in a tool result is the finding.
 pub fn hidden_unicode(text: &str) -> Vec<Finding> {
+    let mut out = Vec::new();
+
+    // Sneaky bits: a long run of variation selectors, each standing for one
+    // byte. Reported separately from the invisibles below because the finding
+    // is the run length, not which code points turned up.
+    let run = normalize::variation_selector_run(text);
+    if run >= 8 {
+        out.push(Finding {
+            scanner: Scanner::HiddenUnicode,
+            rule: "variation-selector-payload".into(),
+            title: "Data encoded in variation selectors".into(),
+            severity: Severity::Critical,
+            detail: format!("a run of {run} variation selectors — {run} bytes of hidden data, rendered as nothing"),
+            sample: format!("run of {run}"),
+            start: 0,
+            end: 0,
+        });
+    }
+
     let found = normalize::invisibles(text);
     if found.is_empty() {
-        return Vec::new();
+        return out;
     }
-    // Tag characters and bidi overrides have no legitimate use in agent traffic
-    // and are the two that carry a real payload. The rest — zero-width joiners,
-    // soft hyphens — turn up in copy-pasted prose too, so they warn.
-    let smuggled = found.iter().any(|c| (0xE0000..=0xE007F).contains(c) || (0x202A..=0x202E).contains(c));
-    let list: Vec<String> = found.iter().take(6).map(|c| format!("U+{c:04X}")).collect();
-    vec![Finding {
-        scanner: Scanner::HiddenUnicode,
-        rule: if smuggled { "unicode-tag-smuggling".into() } else { "zero-width-characters".into() },
-        title: if smuggled { "Invisible unicode payload".into() } else { "Zero-width characters".into() },
-        severity: if smuggled { Severity::Critical } else { Severity::High },
-        detail: format!("{} invisible code point(s): {}", found.len(), list.join(", ")),
-        sample: list.join(","),
-        start: 0,
-        end: 0,
-    }]
+    // Two findings, not one graded finding. Tag characters and bidi overrides
+    // are an encoded payload and have no legitimate use in agent traffic; the
+    // rest — zero-width joiners, soft hyphens — also turn up in copy-pasted
+    // prose, and are how a literal rule is defeated rather than how a payload
+    // is carried. A file with both is doing both, and the report should say so.
+    let smuggled: Vec<u32> = found
+        .iter()
+        .copied()
+        .filter(|c| (0xE0000..=0xE007F).contains(c) || (0x202A..=0x202E).contains(c))
+        .collect();
+    let plain: Vec<u32> = found.iter().copied().filter(|c| !smuggled.contains(c)).collect();
+
+    let describe = |cs: &[u32]| {
+        cs.iter().take(6).map(|c| format!("U+{c:04X}")).collect::<Vec<_>>().join(", ")
+    };
+    if !smuggled.is_empty() {
+        out.push(Finding {
+            scanner: Scanner::HiddenUnicode,
+            rule: "unicode-tag-smuggling".into(),
+            title: "Invisible unicode payload".into(),
+            severity: Severity::Critical,
+            detail: format!("{} tag/bidi code point(s): {}", smuggled.len(), describe(&smuggled)),
+            sample: describe(&smuggled),
+            start: 0,
+            end: 0,
+        });
+    }
+    if !plain.is_empty() {
+        out.push(Finding {
+            scanner: Scanner::HiddenUnicode,
+            rule: "zero-width-characters".into(),
+            title: "Zero-width characters".into(),
+            severity: Severity::High,
+            detail: format!("{} invisible code point(s): {}", plain.len(), describe(&plain)),
+            sample: describe(&plain),
+            start: 0,
+            end: 0,
+        });
+    }
+    out
 }
 
 // ── 4. Tool policy, outbound ───────────────────────────────────────────────
@@ -196,6 +240,9 @@ pub fn hidden_unicode(text: &str) -> Vec<Finding> {
 /// these rules are about `bash` being called at all.
 pub fn tool_policy(rules: &[Compiled], name: &str, args: &str, cfg: &Config) -> Vec<Finding> {
     let subject = format!("{name} {args}");
+    // A completion has no tool name — the model is proposing the command, not
+    // calling it yet — so the finding says where it was found instead.
+    let whose = if name.is_empty() { "the model's answer".to_string() } else { format!("`{name}`") };
     let lower = subject.to_ascii_lowercase();
     let mut out = Vec::new();
     for c in rules {
@@ -206,7 +253,7 @@ pub fn tool_policy(rules: &[Compiled], name: &str, args: &str, cfg: &Config) -> 
             let mut f = finding(
                 Scanner::ToolPolicy,
                 c.rule,
-                format!("{} in `{name}`", c.rule.title),
+                format!("{} in {whose}", c.rule.title),
                 mask(m.as_str()),
                 m.start(),
                 m.end(),
@@ -224,7 +271,7 @@ pub fn tool_policy(rules: &[Compiled], name: &str, args: &str, cfg: &Config) -> 
                     });
                 if allowed {
                     f.severity = Severity::Low;
-                    f.detail = format!("{} in `{name}`, to an allowlisted destination", c.rule.title);
+                    f.detail = format!("{} in {whose}, to an allowlisted destination", c.rule.title);
                 }
             }
             out.push(f);
@@ -268,22 +315,30 @@ pub fn egress(url: &str, cfg: &Config) -> Vec<Finding> {
             format!("`{host}` is a loopback, private or link-local address")));
     }
 
+    // The two entropy checks below are the ones that mistake a signed CDN URL
+    // for an exfiltration, so a destination the operator has already vouched
+    // for is exempt from both. Everything above this line is not: an allowlist
+    // entry is permission to be talked to, not permission to be a drop site.
+    let allowlisted = cfg.allow_list().iter().any(|a| normalize::host_matches(&host, a));
+
     // DNS tunnelling: the payload rides in a subdomain label, so the request
     // looks ordinary to everything that only checks the registered domain.
     let (ent, len) = normalize::max_label_entropy(&host);
-    if len >= 20 && ent >= cfg.subdomain_entropy_threshold {
+    if !allowlisted && len >= 20 && ent >= cfg.subdomain_entropy_threshold {
         out.push(egress_finding("subdomain-entropy", "High-entropy hostname", Severity::High,
             format!("`{host}` carries a {len}-character random label ({ent:.1} bits/char) — the shape of DNS tunnelling")));
     }
 
-    // A long high-entropy query is where an encoded secret rides out when the
-    // secret rules did not recognise its shape.
-    if let Some(q) = url.split_once('?').map(|(_, q)| q) {
-        let e = normalize::entropy(q);
-        if q.len() >= 48 && e >= 4.5 {
-            out.push(egress_finding("query-entropy", "High-entropy query string", Severity::High,
-                format!("{}-byte query at {e:.1} bits/char — an encoded payload rather than parameters", q.len())));
-        }
+    // A long high-entropy path or query is where an encoded secret rides out
+    // when the secret rules did not recognise its shape. Path *and* query,
+    // because the exfiltration that reaches a rendered markdown image puts its
+    // payload in the path, where a query-only check never looks.
+    let tail = url.split_once("://").map_or(url, |(_, r)| r);
+    let tail = tail.find(['/', '?']).map_or("", |i| &tail[i..]);
+    let e = normalize::entropy(tail);
+    if !allowlisted && tail.len() >= 48 && e >= 4.5 {
+        out.push(egress_finding("url-payload-entropy", "Encoded payload in a URL", Severity::High,
+            format!("{} bytes of path/query at {e:.1} bits/char — a payload rather than an address", tail.len())));
     }
     if url.len() > 2048 {
         out.push(egress_finding("url-length", "Oversized URL", Severity::Medium,
@@ -292,13 +347,42 @@ pub fn egress(url: &str, cfg: &Config) -> Vec<Finding> {
 
     // Strict mode is allowlist-only. In every other mode an unknown destination
     // is inspected, not refused — that is the whole difference between the two.
-    if cfg.mode == crate::Mode::Strict
-        && !out.iter().any(|f| f.rule == "host-denied")
-        && !cfg.allow_list().iter().any(|a| normalize::host_matches(&host, a))
-    {
+    if cfg.mode == crate::Mode::Strict && !allowlisted && !out.iter().any(|f| f.rule == "host-denied") {
         out.push(egress_finding("host-not-allowlisted", "Destination not on the allowlist", Severity::Critical,
             format!("strict mode permits only the allowlist; `{host}` is not on it")));
     }
+    out
+}
+
+/// The URLs a rendered answer reaches, paired with whether reaching them takes
+/// a click.
+///
+/// This is the exfiltration channel behind EchoLeak, the Slack AI leak and
+/// every "the assistant rendered an image" report since: markdown image syntax
+/// makes the client fetch the URL the moment the answer is displayed, so an
+/// attacker who can get one sentence into the context can get a GET request out
+/// of it, with whatever the model was willing to put in the path. Reference
+/// style (`![x][ref]` with `[ref]: https://…` further down) is covered too —
+/// it was the form that got past Microsoft's link redaction.
+pub fn markdown_sinks(text: &str) -> Vec<(bool, &str)> {
+    static INLINE: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
+    static REFDEF: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
+    let inline = INLINE.get_or_init(|| {
+        Regex::new(r"(!?)\[[^\]]{0,300}\]\(\s*<?(https?://[^)\s>]+)").expect("literal")
+    });
+    let refdef = REFDEF.get_or_init(|| {
+        Regex::new(r"(?m)^[ 	]{0,3}\[[^\]]{1,120}\]:[ 	]*<?(https?://[^\s>]+)").expect("literal")
+    });
+
+    let mut out: Vec<(bool, &str)> = inline
+        .captures_iter(text)
+        .take(32)
+        .filter_map(|c| Some((c.get(1)?.as_str() == "!", c.get(2)?.as_str())))
+        .collect();
+    // A reference definition does not say whether it is used as an image or a
+    // link. Treated as a link — the weaker claim — so the finding rests on what
+    // the URL carries rather than on a guess about how it is rendered.
+    out.extend(refdef.captures_iter(text).take(32).filter_map(|c| Some((false, c.get(1)?.as_str()))));
     out
 }
 

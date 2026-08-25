@@ -106,7 +106,7 @@ pub static SECRETS: &[Rule] = &[
     Rule {
         id: "aws-secret-key", title: "AWS secret access key", severity: Severity::Critical,
         regex: r"(?i)aws[_\-. ]?secret[_\-. ]?(?:access[_\-. ]?)?key\s*[:=]\s*[\x22']?([A-Za-z0-9/+=]{40})",
-        keywords: &["aws_secret", "aws-secret", "secretaccesskey", "secret access key"],
+        keywords: &["aws", "secretaccesskey", "secret access key"],
         entropy: 3.5, validator: Validator::None, exempt_hosts: &[],
     },
     r("gcp-service-account", "GCP service account key", Severity::Critical,
@@ -178,7 +178,7 @@ pub static SECRETS: &[Rule] = &[
     Rule {
         id: "generic-api-key", title: "Generic API key assignment", severity: Severity::High,
         regex: r#"(?i)\b(?:api[_\-. ]?key|apikey|access[_\-. ]?token|auth[_\-. ]?token|secret[_\-. ]?key|client[_\-. ]?secret)\s*[:=]\s*["']?([A-Za-z0-9_\-\.=+/]{24,})"#,
-        keywords: &["api_key", "apikey", "api-key", "access_token", "auth_token", "secret_key", "client_secret", "api key"],
+        keywords: &["key", "token", "secret"],
         entropy: 3.5, validator: Validator::None, exempt_hosts: &[],
     },
     Rule {
@@ -213,7 +213,7 @@ pub static INJECTION: &[Rule] = &[
       &["ignore", "disregard", "forget", "discard", "override"]),
     r("new-instructions", "Injected new instructions", Severity::High,
       r"(?i)\b(?:new|updated|revised|additional)\s+(?:system\s+)?(?:instructions?|directives?|rules?|prompt)\b\s*[:.]",
-      &["new instruction", "updated instruction", "revised instruction", "new system", "new rules", "new directive"]),
+      &["instruction", "directive", "rules", "prompt"]),
     r("system-role-forgery", "Forged system turn", Severity::High,
       r"(?im)^\s*(?:\[?\s*)?(?:system|developer)\s*(?:\]|:|>)\s", &["system", "developer"]),
     r("chat-template-injection", "Chat template control tokens", Severity::Critical,
@@ -221,10 +221,10 @@ pub static INJECTION: &[Rule] = &[
       &["<|", "[inst]", "[/inst]", "<<sys>>"]),
     r("do-not-tell-user", "Hidden-from-user instruction", Severity::Critical,
       r"(?i)\b(?:do\s+not|don't|never)\s+(?:tell|reveal|show|mention|display|inform|disclose)\b[^.\n]{0,30}\b(?:the\s+)?user\b",
-      &["do not tell", "don't tell", "never tell", "do not reveal", "not mention", "do not disclose"]),
+      &["user"]),
     r("exfiltrate-directive", "Exfiltration directive", Severity::Critical,
       r"(?i)\b(?:send|post|upload|transmit|forward|exfiltrate|leak|email|curl|wget|fetch)\b[^.\n]{0,80}\b(?:api[_\- ]?key|secret|token|credential|password|\.env|env\s+var|ssh\s+key|private\s+key|cookie)s?\b",
-      &["send", "post", "upload", "transmit", "forward", "exfiltrate", "leak", "curl", "wget"]),
+      &["send", "post", "upload", "transmit", "forward", "exfiltrate", "leak", "email", "curl", "wget", "fetch"]),
     r("exfiltrate-to-url", "Send-to-URL directive", Severity::Critical,
       r"(?i)\b(?:send|post|upload|transmit|forward|report)\b[^.\n]{0,60}\b(?:to|at|via)\s+https?://",
       &["send", "post", "upload", "transmit", "forward", "report"]),
@@ -236,7 +236,7 @@ pub static INJECTION: &[Rule] = &[
       &["developer mode", "godmode", "god mode", "sudo mode", "dev mode", "admin mode", "debug mode"]),
     r("authority-escalation", "Claimed privilege escalation", Severity::High,
       r"(?i)\byou\s+(?:now\s+)?have\s+(?:full\s+)?(?:admin|root|system|superuser|elevated|unrestricted)\s+(?:access|privilege|permission|right)",
-      &["you now have", "you have full", "you have admin", "you have root"]),
+      &["you now have", "you have"]),
     r("tool-invocation-directive", "Forced tool invocation", Severity::High,
       r"(?i)\byou\s+must\s+(?:immediately\s+)?(?:call|execute|run|invoke|use)\s+(?:the\s+|this\s+)?(?:function|tool|command|api|endpoint|script)",
       &["you must"]),
@@ -254,10 +254,34 @@ pub static INJECTION: &[Rule] = &[
       r"(?i)=+/?[A-Z\-]{2,}(?:/[A-Z\-]{1,6}){2,}=+", &["="]),
     r("memory-poison", "Memory / rule persistence", Severity::High,
       r"(?i)\b(?:remember|store|save|persist|add)\s+(?:this|the\s+following)\b[^.\n]{0,40}\b(?:for\s+(?:all\s+)?(?:future|later)|permanently|to\s+(?:your\s+)?memory|in\s+(?:your\s+)?(?:memory|rules|CLAUDE\.md|AGENTS\.md))",
-      &["remember", "store", "save", "persist"]),
+      &["remember", "store", "save", "persist", "add "]),
+    // Self-modification: an agent persuaded to edit the files that decide what
+    // it is allowed to do next. CVE-2025-53773 is the extreme case — one line
+    // in `.vscode/settings.json` turns every future tool call into an
+    // auto-approved one — so the setting itself is named, not only the file.
     r("agent-config-write", "Agent config self-modification", Severity::Critical,
-      r"(?i)\b(?:append|write|add|insert)\b[^.\n]{0,40}\b(?:CLAUDE\.md|AGENTS\.md|\.cursorrules|\.clinerules|settings\.local\.json|mcp\.json)\b",
-      &["claude.md", "agents.md", ".cursorrules", ".clinerules", "settings.local.json", "mcp.json"]),
+      r"(?i)\b(?:append|write|add|insert|edit|modify|update|set)\b[^.\n]{0,60}\b(?:CLAUDE\.md|AGENTS\.md|GEMINI\.md|copilot-instructions\.md|\.cursorrules|\.clinerules|\.cursor/rules|settings\.local\.json|\.vscode/settings\.json|\.mcp\.json|mcp\.json|\.github/workflows)\b",
+      &["claude.md", "agents.md", "gemini.md", "copilot-instructions", ".cursorrules", ".clinerules", ".cursor/rules",
+        "settings.local.json", ".vscode/settings.json", "mcp.json", ".github/workflows"]),
+    // A tool description, an issue body or a page telling the agent to go and
+    // read a credential file. Its outbound twin is the tool-policy rule
+    // `credential-file-read`; this is the sentence that asks for it, which is
+    // what arrives first and is the only version a *tool description* has.
+    r("credential-read-directive", "Instruction to read credential files", Severity::Critical,
+      r"(?i)\b(?:read|open|cat|load|fetch|include|attach|send|pass)\b[^.\n]{0,60}(?:~|\$HOME)?/?\.(?:ssh/id_[a-z0-9]+|ssh\b|aws/credentials|netrc|npmrc|pypirc|env\b|cursor/mcp\.json|config/gcloud|kube/config|docker/config\.json)",
+      &[".ssh", ".aws/credentials", ".netrc", ".npmrc", ".pypirc", ".env", "mcp.json", "kube/config", "docker/config"]),
+    // The Amazon Q wiper prompt's exact shape: a *goal* stated in prose, with
+    // no command in sight for a shell rule to match.
+    r("destructive-directive", "Destructive goal stated as a task", Severity::Critical,
+      r"(?i)\b(?:wipe|erase|destroy|clean|reset|delete|remove|purge|drop)\b[^.\n]{0,60}\b(?:file[- ]?system|factory[- ]?state|entire\s+(?:disk|system|repo\w*|database)|all\s+(?:files?|data|repos\w*|buckets?|instances?|users?|resources?|tables?)|cloud\s+resources?|s3\s+buckets?|ec2\s+instances?|iam\s+users?)",
+      &["wipe", "erase", "destroy", "clean", "reset", "delete", "remove", "purge", "drop"]),
+    // Consent, asserted by the data about the person the data is about. Narrow
+    // on purpose: an ordinary bug report never waives someone's privacy, and
+    // this is the hinge the GitHub-MCP proof of concept turned on.
+    r("claimed-consent", "Privacy waiver asserted inside data", Severity::High,
+      r"(?i)(?:(?:does\s*n[o']?t|do\s*n[o']?t|no\s+longer)\s+care\s+about\s+(?:privacy|confidentiality|security)|(?:it\s+is|it's|its)\s+(?:fine|ok(?:ay)?|safe)\s+to\s+(?:share|publish|post|disclose|include)\b|(?:go\s+ahead\s+and\s+)?(?:put|share|publish|post|include)\s+everything\s+you\s+(?:find|can\s+find)|has\s+(?:already\s+)?(?:consented|authorized|approved)\b)",
+      &["care about privacy", "care about confidentiality", "fine to share", "ok to share", "okay to share",
+        "safe to share", "everything you find", "consented", "authorized", "approved"]),
 ];
 
 // ── Tool policy: the calls an agent should not be able to make unattended ───
@@ -278,7 +302,7 @@ pub static TOOL_POLICY: &[Rule] = &[
       &["nc ", "/dev/tcp/", "bash -i", "socat", "socket"]),
     r("credential-file-read", "Credential file access", Severity::Critical,
       r"(?i)(?:~|/root|/home/[\w.\-]+|\$HOME)?/?\.(?:ssh/id_[a-z0-9]+|aws/credentials|netrc|npmrc|pypirc|docker/config\.json|kube/config|gnupg/)|(?:^|[\s\x22'/])\.env(?:\.(?:local|production|prod|development|dev|staging|test))?(?:$|[^\w.\-])",
-      &[".ssh/id_", ".aws/credentials", ".netrc", ".npmrc", ".pypirc", ".env", "kube/config", "docker/config"]),
+      &[".ssh/id_", ".aws/credentials", ".netrc", ".npmrc", ".pypirc", ".env", "kube/config", "docker/config", ".gnupg"]),
     r("keychain-dump", "OS credential store dump", Severity::Critical,
       r"(?i)(?:security\s+(?:find|dump)-(?:generic|internet)-password|secret-tool\s+lookup|\bcmdkey\s+/list)",
       &["find-generic-password", "find-internet-password", "secret-tool", "cmdkey"]),
@@ -310,6 +334,16 @@ pub static TOOL_POLICY: &[Rule] = &[
       r"(?i)\bgit\s+push\b[^\n]{0,60}(?:--force(?:[^\-\w]|$)|(?:^|\s)-f(?:\s|$))", &["git push"]),
     r("mass-file-write", "Sweeping in-place rewrite", Severity::High,
       r"(?i)\bfind\s+[^\n]{0,60}-(?:exec|delete)\b|\bsed\s+-i[^\n]{0,40}-r?\s*\{\}", &["find ", "sed -i"]),
+    // The write that turns every later tool call into an unattended one. Its
+    // instruction-shaped twin lives in the injection table as
+    // `agent-config-write`; this is the command that carries it out.
+    r("auto-approve-escalation", "Tool auto-approval enabled", Severity::Critical,
+      r#"(?i)(?:chat\.tools\.autoApprove|"?autoApprove"?\s*[:=]\s*true|--dangerously-skip-permissions|--yolo\b|bypassPermissions)"#,
+      &["autoapprove", "dangerously-skip-permissions", "--yolo", "bypasspermissions"]),
+    r("agent-config-tamper", "Write into an agent's own config", Severity::High,
+      r"(?i)(?:>>?|tee|sed\s+-i|cat\s*>|echo\b[^\n]{0,120}>)[^\n]{0,80}(?:CLAUDE\.md|AGENTS\.md|GEMINI\.md|copilot-instructions\.md|\.cursorrules|\.cursor/rules|\.clinerules|\.vscode/settings\.json|settings\.local\.json|\.mcp\.json|\.github/workflows)",
+      &["claude.md", "agents.md", "gemini.md", "copilot-instructions", ".cursorrules", ".cursor/rules",
+        ".clinerules", ".vscode/settings.json", "settings.local.json", ".mcp.json", ".github/workflows"]),
     r("package-install-remote", "Package install from an arbitrary URL", Severity::Medium,
       r"(?i)\b(?:npm|pnpm|yarn)\s+(?:i|add|install)\s+(?:https?://|git\+|file:)|\bpip[0-9.]*\s+install\s+(?:https?://|git\+|-e\s+\.)",
       &["npm i", "npm install", "pnpm add", "yarn add", "pip install"]),

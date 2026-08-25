@@ -54,13 +54,40 @@ fn deleet(c: char) -> Option<char> {
     })
 }
 
+/// A variation selector: U+FE00..FE0F and the ideographic block U+E0100..E01EF.
+///
+/// Not folded into [`is_invisible`] on purpose. A single one of these is
+/// ordinary — U+FE0F is what makes an emoji render in colour, and the
+/// ideographic selectors pick a glyph variant in Japanese text. It is a *run*
+/// of them that is a payload: 256 selectors map one-to-one onto the 256 byte
+/// values, which is what "sneaky bits" encoding uses to hide arbitrary data in
+/// a string that displays as nothing at all.
+fn is_variation_selector(c: char) -> bool {
+    matches!(c, '\u{FE00}'..='\u{FE0F}' | '\u{E0100}'..='\u{E01EF}')
+}
+
+/// The longest unbroken run of variation selectors. Real typography emits one
+/// at a time, after the character it modifies; anything longer is data.
+pub fn variation_selector_run(text: &str) -> usize {
+    let (mut best, mut run) = (0usize, 0usize);
+    for c in text.chars() {
+        if is_variation_selector(c) {
+            run += 1;
+            best = best.max(run);
+        } else {
+            run = 0;
+        }
+    }
+    best
+}
+
 /// Drop invisibles and collapse runs of whitespace. Always applied — the
 /// unfolded text is never what a rule is matched against.
 pub fn strip(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     let mut last_space = false;
     for c in text.chars() {
-        if is_invisible(c) {
+        if is_invisible(c) || is_variation_selector(c) {
             continue;
         }
         if c.is_whitespace() && c != '\n' {

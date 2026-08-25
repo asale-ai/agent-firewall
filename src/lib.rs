@@ -38,6 +38,7 @@
 //! ```
 
 pub mod audit;
+pub mod corpus;
 mod normalize;
 pub mod rules;
 mod scan;
@@ -457,7 +458,18 @@ impl Firewall {
         if self.cfg.hidden_unicode && s.kind != Kind::Url {
             findings.extend(scan::hidden_unicode(s.text));
         }
-        if self.cfg.tool_policy && s.kind == Kind::ToolCall {
+        // Tool policy runs on completions as well as on tool calls, and that is
+        // not over-reach — it is the only moment that helps.
+        //
+        // A model proposing `curl … | sh` and an agent running it are separated
+        // by nothing the boundary can see: the agent executes locally and the
+        // proxy does not hear about it until the *result* comes back in the
+        // next request, which is already too late. So the proposal is judged as
+        // the command. The cost is that a model quoting an installer in an
+        // explanation is refused too; the answer to that is the per-tool mode
+        // and the per-rule suppression, not a firewall that watches the wrong
+        // side of the boundary.
+        if self.cfg.tool_policy && matches!(s.kind, Kind::ToolCall | Kind::Completion) {
             findings.extend(scan::tool_policy(&self.tools, s.name, s.text, &self.cfg));
         }
         if self.cfg.egress {
@@ -468,6 +480,40 @@ impl Firewall {
                 Kind::ToolCall => {
                     for url in scan::urls_in(s.text) {
                         findings.extend(scan::egress(url, &self.cfg));
+                    }
+                }
+                // Inbound text is not a request, but the client that renders it
+                // makes one: a markdown image is fetched the moment the answer
+                // is displayed. So the destinations in an answer are inspected
+                // as destinations, with the click-free ones held to the higher
+                // standard, because those are the ones the user never agreed to.
+                Kind::Completion | Kind::ToolOutput => {
+                    // Same argument as the tool policy above: a URL a completion
+                    // proposes to fetch is a URL about to be fetched.
+                    if s.kind == Kind::Completion {
+                        for url in scan::urls_in(s.text) {
+                            findings.extend(scan::egress(url, &self.cfg));
+                        }
+                    }
+                    for (auto_fetch, url) in scan::markdown_sinks(s.text) {
+                        // Judged as a destination, which also runs the secret
+                        // rules over it: the Slack AI leak put the stolen key
+                        // in the query string of a link the user was invited to
+                        // click, and no egress check would have seen that.
+                        let mut found = self.inspect(&Subject::url(url)).findings;
+                        if auto_fetch {
+                            // Anything at all wrong with a URL that fetches
+                            // itself is critical: there is no click to withhold.
+                            for f in &mut found {
+                                f.severity = Severity::Critical;
+                                f.detail = format!("{} — and it is a markdown image, fetched with no click", f.detail);
+                            }
+                        } else {
+                            // A link is only reached deliberately, so "not on
+                            // the allowlist" is not by itself a finding.
+                            found.retain(|f| f.rule != "host-not-allowlisted");
+                        }
+                        findings.extend(found);
                     }
                 }
                 _ => {}
