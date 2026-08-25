@@ -10,6 +10,8 @@ agent-firewall demo
 
 runs a corpus of real attack shapes plus benign traffic and prints what happens to each. No config, no network, no account.
 
+It runs in production inside [Asale](https://github.com/asale-ai/asale)'s desktop client, on both sides of every request its users' agents make — see [In use](#in-use).
+
 ## Five scanners
 
 Each is independently switchable, because a boundary nobody can tune gets turned off entirely.
@@ -82,11 +84,27 @@ let (masked, found) = fw.redact(&text);   // secrets replaced with <redacted:rul
 
 `Config` is plain serde — every field defaults, so a UI can write `{"mode":"strict","egress":false}` and mean it.
 
-Take the engine without the CLI:
+Take the engine without the CLI — `default-features = false` drops clap, which a
+proxy has no use for:
 
 ```toml
-agent-firewall = { version = "0.1", default-features = false }
+agent-firewall = { git = "https://github.com/asale-ai/agent-firewall", tag = "v0.3.0", default-features = false }
 ```
+
+## In use
+
+[**Asale**](https://github.com/asale-ai/asale) — a marketplace for idle LLM subscription quota — embeds this crate in its desktop client, and is where most of what is in here came from.
+
+The fit is not incidental. Every buy-side agent on an Asale user's machine is already pointed at a local proxy in that client, so one process on the machine sees the whole conversation of every agent the user runs. The boundary was already there; the firewall is what it now does with it.
+
+- **Outbound**, in the proxy's request path: `inspect_request` on the body, after the billing gate and before either route. A block is a `403` the agent can read.
+- **Inbound**, over the streamed answer: a rolling window is scanned as chunks pass, and a chunk that trips the firewall ends the stream there.
+- **The UI is `Config`.** The client's Security page is five switches, three modes per agent, an allow/deny list and a suppression list — the fields of this crate's `Config`, one control each. Scanner ids and rule counts are read from `Scanner::ALL` and `rules::tables()` rather than restated, so a rule added here shows up there.
+- **It ships on for every agent, in `Mode::Audit`.** Findings are recorded, nothing is refused, and the user promotes a tool to `Balanced` or `Strict` once they have looked at what it caught.
+
+The client's own guide to that page — with screenshots, the three modes, and how to read a finding — is at [asale.ai/docs/agent-security](https://asale.ai/en/docs/agent-security).
+
+That integration is also why `Kind::Completion` is judged by the tool-policy rules and why the egress checks look at the URLs in an *answer*. A locally installed agent runs its tools on its own machine: the proxy hears about a tool call only when the *result* comes back in the next request, by which point the command has run. The answer is the last moment anything can stop it — which is exactly the shape of [the relay-injection report](https://v2ex.com/t/1233104) that is case #1 in the table below.
 
 ## Audit log
 
