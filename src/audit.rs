@@ -136,8 +136,22 @@ impl AuditLog {
     }
 }
 
+/// The chain head, read without parsing the whole log — only the last line is
+/// a record we need. A log that has been appended to for months is still one
+/// `read_to_string` and one `serde_json::from_str`.
 fn last_hash(path: &Path) -> Result<String> {
-    Ok(AuditLog::read(path)?.last().map(|r| r.hash.clone()).unwrap_or_default())
+    let text = match std::fs::read_to_string(path) {
+        Ok(t) => t,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(String::new()),
+        Err(e) => return Err(crate::Error(format!("audit read: {e}"))),
+    };
+    let Some(line) = text.lines().rev().find(|l| !l.trim().is_empty()) else {
+        return Ok(String::new());
+    };
+    // A trailing partial line (a crash mid-write) is not a reason to refuse to
+    // log again — start a fresh chain rather than dying, and `verify` will
+    // report exactly where the old one stopped.
+    Ok(serde_json::from_str::<Record>(line).map(|r| r.hash).unwrap_or_default())
 }
 
 fn now() -> u64 {
