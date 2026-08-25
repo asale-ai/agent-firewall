@@ -1,6 +1,6 @@
 [package]
 name = "agent-firewall"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 rust-version = "1.82"
 description = "A firewall for AI coding agents: secret exfiltration, prompt injection, hidden-unicode, dangerous tool calls and egress control, as a CLI and an embeddable SDK"

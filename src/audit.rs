@@ -50,6 +50,12 @@ impl Record {
             h.update(f.rule.as_bytes());
             h.update(f.severity.as_str().as_bytes());
             h.update(f.sample.as_bytes());
+            // Added after the first release. Records written before it carry
+            // neither field, so both deserialize to `""` and contribute no
+            // bytes — the digest of an old record is unchanged and its chain
+            // still verifies.
+            h.update(f.evidence.as_bytes());
+            h.update(f.source.as_bytes());
         }
         format!("{:x}", h.finalize())
     }

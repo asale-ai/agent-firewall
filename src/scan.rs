@@ -45,6 +45,7 @@ fn finding(
     rule: &Rule,
     detail: String,
     sample: String,
+    evidence: String,
     start: usize,
     end: usize,
 ) -> Finding {
@@ -55,8 +56,49 @@ fn finding(
         severity: rule.severity,
         detail,
         sample,
+        evidence,
+        source: String::new(),
         start,
         end,
+    }
+}
+
+/// At most this much text in a `sample` or an `evidence`. Long enough to read a
+/// command or a sentence, short enough that a finding never becomes a copy of
+/// the document it was found in.
+const MAX_SAMPLE: usize = 160;
+const EVIDENCE_PAD: usize = 60;
+
+/// `s`, cut to `max` characters on a character boundary, with an ellipsis when
+/// anything was dropped. Newlines become spaces: a finding is one line in a log
+/// and one line in a table.
+fn clip(s: &str, max: usize) -> String {
+    let flat: String = s.chars().map(|c| if c.is_control() { ' ' } else { c }).collect();
+    let flat = flat.split_whitespace().collect::<Vec<_>>().join(" ");
+    if flat.chars().count() <= max {
+        return flat;
+    }
+    let head: String = flat.chars().take(max).collect();
+    format!("{head}…")
+}
+
+/// A window around `[start, end)` — the match plus a little of what surrounds
+/// it, which is what makes a finding locatable in the original document.
+fn excerpt(text: &str, start: usize, end: usize) -> String {
+    let lo = (0..=start.saturating_sub(EVIDENCE_PAD))
+        .rev()
+        .find(|i| text.is_char_boundary(*i))
+        .unwrap_or(0);
+    let hi = ((end + EVIDENCE_PAD).min(text.len())..=text.len())
+        .find(|i| text.is_char_boundary(*i))
+        .unwrap_or(text.len());
+    let (lo, hi) = if lo <= hi { (lo, hi) } else { (0, text.len()) };
+    let body = clip(&text[lo..hi], MAX_SAMPLE + 2 * EVIDENCE_PAD);
+    match (lo > 0, hi < text.len()) {
+        (true, true) => format!("…{body}…"),
+        (true, false) => format!("…{body}"),
+        (false, true) => format!("{body}…"),
+        (false, false) => body,
     }
 }
 
@@ -109,11 +151,16 @@ pub fn secrets(rules: &[Compiled], text: &str, host: Option<&str>, cfg: &Config)
             if !ok {
                 continue;
             }
+            // The excerpt is the whole point of a credential finding — a masked
+            // key alone does not tell you *which* line to go and fix — so the
+            // surrounding text comes along with the secret itself masked out.
+            let masked_context = excerpt(&text.replace(secret, &mask(secret)), m.start(), m.end());
             out.push(finding(
                 Scanner::Secret,
                 c.rule,
                 format!("{} in outbound content", c.rule.title),
                 mask(secret),
+                masked_context,
                 m.start(),
                 m.end(),
             ));
@@ -153,7 +200,8 @@ pub fn injection(rules: &[Compiled], text: &str) -> Vec<Finding> {
                 Scanner::Injection,
                 c.rule,
                 format!("{}{how} in untrusted content", c.rule.title),
-                mask(m.as_str()),
+                clip(m.as_str(), MAX_SAMPLE),
+                excerpt(fold, m.start(), m.end()),
                 m.start(),
                 m.end(),
             ));
@@ -181,7 +229,9 @@ pub fn hidden_unicode(text: &str) -> Vec<Finding> {
             title: "Data encoded in variation selectors".into(),
             severity: Severity::Critical,
             detail: format!("a run of {run} variation selectors — {run} bytes of hidden data, rendered as nothing"),
-            sample: format!("run of {run}"),
+            sample: format!("{run} consecutive variation selectors"),
+            evidence: clip(text, MAX_SAMPLE),
+            source: String::new(),
             start: 0,
             end: 0,
         });
@@ -214,6 +264,11 @@ pub fn hidden_unicode(text: &str) -> Vec<Finding> {
             severity: Severity::Critical,
             detail: format!("{} tag/bidi code point(s): {}", smuggled.len(), describe(&smuggled)),
             sample: describe(&smuggled),
+            // What the text *decodes to* once the tag block is folded back onto
+            // ASCII — the hidden sentence, which is the only thing worth
+            // reading here. A list of code points is not a payload.
+            evidence: clip(&decode_tags(text), MAX_SAMPLE),
+            source: String::new(),
             start: 0,
             end: 0,
         });
@@ -226,11 +281,27 @@ pub fn hidden_unicode(text: &str) -> Vec<Finding> {
             severity: Severity::High,
             detail: format!("{} invisible code point(s): {}", plain.len(), describe(&plain)),
             sample: describe(&plain),
+            evidence: clip(&normalize::strip(text), MAX_SAMPLE),
+            source: String::new(),
             start: 0,
             end: 0,
         });
     }
     out
+}
+
+/// Unicode tag characters folded back onto the ASCII they mirror, with
+/// everything else kept. U+E0041 is a tag "A": the block was designed as an
+/// invisible copy of ASCII, which is exactly what makes it a smuggling channel
+/// and exactly what makes it trivial to read back.
+fn decode_tags(text: &str) -> String {
+    text.chars()
+        .filter_map(|c| match c as u32 {
+            0xE0020..=0xE007E => char::from_u32(c as u32 - 0xE0000),
+            0xE0001 | 0xE007F => None,
+            _ => Some(c),
+        })
+        .collect()
 }
 
 // ── 4. Tool policy, outbound ───────────────────────────────────────────────
@@ -254,7 +325,8 @@ pub fn tool_policy(rules: &[Compiled], name: &str, args: &str, cfg: &Config) -> 
                 Scanner::ToolPolicy,
                 c.rule,
                 format!("{} in {whose}", c.rule.title),
-                mask(m.as_str()),
+                clip(m.as_str(), MAX_SAMPLE),
+                excerpt(&subject, m.start(), m.end()),
                 m.start(),
                 m.end(),
             );
@@ -282,14 +354,18 @@ pub fn tool_policy(rules: &[Compiled], name: &str, args: &str, cfg: &Config) -> 
 
 // ── 5. Egress, outbound ────────────────────────────────────────────────────
 
-fn egress_finding(rule: &'static str, title: &str, sev: Severity, detail: String) -> Finding {
+fn egress_finding(rule: &'static str, title: &str, sev: Severity, detail: String, url: &str) -> Finding {
     Finding {
         scanner: Scanner::Egress,
         rule: rule.into(),
         title: title.into(),
         severity: sev,
         detail,
-        sample: String::new(),
+        // The destination, in full. "A request was refused" is not actionable;
+        // "a request to *this* was refused" is the entire finding.
+        sample: clip(url, MAX_SAMPLE),
+        evidence: String::new(),
+        source: String::new(),
         start: 0,
         end: 0,
     }
@@ -304,15 +380,15 @@ pub fn egress(url: &str, cfg: &Config) -> Vec<Finding> {
 
     if cfg.deny_hosts.iter().any(|d| normalize::host_matches(&host, d)) {
         out.push(egress_finding("host-denied", "Denied destination", Severity::Critical,
-            format!("`{host}` is on the deny list")));
+            format!("`{host}` is on the deny list"), url));
     }
     if EXFIL_HOSTS.iter().any(|d| normalize::host_matches(&host, d)) {
         out.push(egress_finding("exfil-host", "Anonymous drop site", Severity::Critical,
-            format!("`{host}` accepts anonymous uploads — a one-hop exfiltration channel")));
+            format!("`{host}` accepts anonymous uploads — a one-hop exfiltration channel"), url));
     }
     if normalize::is_ssrf_target(&host) {
         out.push(egress_finding("ssrf-target", "Internal / metadata address", Severity::Critical,
-            format!("`{host}` is a loopback, private or link-local address")));
+            format!("`{host}` is a loopback, private or link-local address"), url));
     }
 
     // The two entropy checks below are the ones that mistake a signed CDN URL
@@ -326,7 +402,7 @@ pub fn egress(url: &str, cfg: &Config) -> Vec<Finding> {
     let (ent, len) = normalize::max_label_entropy(&host);
     if !allowlisted && len >= 20 && ent >= cfg.subdomain_entropy_threshold {
         out.push(egress_finding("subdomain-entropy", "High-entropy hostname", Severity::High,
-            format!("`{host}` carries a {len}-character random label ({ent:.1} bits/char) — the shape of DNS tunnelling")));
+            format!("`{host}` carries a {len}-character random label ({ent:.1} bits/char) — the shape of DNS tunnelling"), url));
     }
 
     // A long high-entropy path or query is where an encoded secret rides out
@@ -338,18 +414,18 @@ pub fn egress(url: &str, cfg: &Config) -> Vec<Finding> {
     let e = normalize::entropy(tail);
     if !allowlisted && tail.len() >= 48 && e >= 4.5 {
         out.push(egress_finding("url-payload-entropy", "Encoded payload in a URL", Severity::High,
-            format!("{} bytes of path/query at {e:.1} bits/char — a payload rather than an address", tail.len())));
+            format!("{} bytes of path/query at {e:.1} bits/char — a payload rather than an address", tail.len()), url));
     }
     if url.len() > 2048 {
         out.push(egress_finding("url-length", "Oversized URL", Severity::Medium,
-            format!("{} bytes of URL", url.len())));
+            format!("{} bytes of URL", url.len()), url));
     }
 
     // Strict mode is allowlist-only. In every other mode an unknown destination
     // is inspected, not refused — that is the whole difference between the two.
     if cfg.mode == crate::Mode::Strict && !allowlisted && !out.iter().any(|f| f.rule == "host-denied") {
         out.push(egress_finding("host-not-allowlisted", "Destination not on the allowlist", Severity::Critical,
-            format!("strict mode permits only the allowlist; `{host}` is not on it")));
+            format!("strict mode permits only the allowlist; `{host}` is not on it"), url));
     }
     out
 }

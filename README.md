@@ -67,6 +67,13 @@ For a proxy, `inspect_request` walks an Anthropic / OpenAI chat-completions / Re
 let v = fw.inspect_request(&body, Some("api.anthropic.com"));
 ```
 
+A finding carries what it matched (`sample`), a one-line window of the text
+around it (`evidence`), and which turn of the conversation it came out of
+(`source` — `tool result #4`, `tool call: bash`, `answer`). Credentials are
+masked everywhere, including inside another scanner's excerpt; everything else
+is quoted verbatim, because a masked injection payload says a rule fired and
+nothing more.
+
 Redaction, for when a refusal costs more than a mask does:
 
 ```rust
