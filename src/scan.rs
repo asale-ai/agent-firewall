@@ -178,12 +178,19 @@ pub fn secrets(rules: &[Compiled], text: &str, host: Option<&str>, cfg: &Config)
 /// Offsets are into the *normalized* text, not the original — the folds are
 /// what matched, and pretending otherwise would point a caller at the wrong
 /// bytes.
-pub fn injection(rules: &[Compiled], text: &str) -> Vec<Finding> {
+pub fn injection(rules: &[Compiled], text: &str, role: crate::Role) -> Vec<Finding> {
+    // The operator's own turns. A rule on `USER_PERMITTED` describes a sentence
+    // that is an instruction when it comes from here and an attack when it comes
+    // from anywhere else, so it is skipped for these two roles only.
+    let ours = matches!(role, crate::Role::User | crate::Role::System);
     let folds = normalize::folds(text);
     let mut out: Vec<Finding> = Vec::new();
     for (i, fold) in folds.iter().enumerate() {
         let lower = fold.to_ascii_lowercase();
         for c in rules {
+            if ours && crate::rules::USER_PERMITTED.contains(&c.rule.id) {
+                continue;
+            }
             if out.iter().any(|f| f.rule == c.rule.id) {
                 continue; // one finding per rule; the first fold that hit says it
             }
