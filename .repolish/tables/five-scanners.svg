@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="880" height="525" viewBox="0 0 880 525" lang="en" role="img" aria-label="Five scanners — table">
+  <defs>
+    <linearGradient id="brand" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#7d56f4"/>
+      <stop offset="0.55" stop-color="#ff5fd1"/>
+      <stop offset="1" stop-color="#43e5d0"/>
+    </linearGradient>
+  </defs>
+  <style>
+    .t { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", "Noto Sans Mono CJK SC", "Noto Sans Mono CJK JP", "Microsoft YaHei", "Hiragino Sans", "Yu Gothic", monospace; }
+  </style>
+  <rect x="0" y="0" width="880" height="525" rx="18.0" fill="#1a1a24"/>
+  <rect x="0.5" y="0.5" width="879" height="524" rx="17.5" fill="none" stroke="#35334a"/>
+  <text class="t" x="28" y="38" font-size="11" fill="#8b87a3" text-anchor="start" letter-spacing="1.4">FIVE SCANNERS</text>
+  <text class="t" x="28" y="68" font-size="11" fill="#8b87a3" text-anchor="start" letter-spacing="1.4">SCANNER</text>
+  <text class="t" x="169" y="68" font-size="11" fill="#8b87a3" text-anchor="start" letter-spacing="1.4">DIRECTION</text>
+  <text class="t" x="353" y="68" font-size="11" fill="#8b87a3" text-anchor="start" letter-spacing="1.4">CATCHES</text>
+  <rect x="28" y="78" width="824" height="1" fill="#35334a"/>
+  <rect x="28" y="89" width="55" height="19" rx="4.0" fill="#222130"/>
+  <text class="t" x="34" y="102" font-size="12" fill="#edebfa" text-anchor="start">secret</text>
+  <text class="t" x="169" y="102" font-size="13" fill="#edebfa" text-anchor="start">outbound</text>
+  <text class="t" x="353" y="102" font-size="13" fill="#edebfa" text-anchor="start">~45 credential patterns leaving inside a prompt or a tool</text>
+  <text class="t" x="353" y="120" font-size="13" fill="#edebfa" text-anchor="start">argument — provider keys, cloud credentials, tokens, private</text>
+  <text class="t" x="353" y="138" font-size="13" fill="#edebfa" text-anchor="start">keys, DB URIs. Keyword pre-filter, Shannon-entropy floor,</text>
+  <text class="t" x="353" y="156" font-size="13" fill="#edebfa" text-anchor="start">Luhn/mod-97 checksums. A provider key addressed to its own…</text>
+  <rect x="20" y="167" width="840" height="89" rx="5.0" fill="#222130"/>
+  <rect x="28" y="178" width="77" height="19" rx="4.0" fill="#222130"/>
+  <text class="t" x="34" y="191" font-size="12" fill="#edebfa" text-anchor="start">injection</text>
+  <text class="t" x="169" y="191" font-size="13" fill="#edebfa" text-anchor="start">inbound</text>
+  <text class="t" x="353" y="191" font-size="13" fill="#edebfa" text-anchor="start">47 prompt-injection and agent-hijack patterns, in English,</text>
+  <text class="t" x="353" y="209" font-size="13" fill="#edebfa" text-anchor="start">Chinese and Japanese in tool output, fetched pages and memory —</text>
+  <text class="t" x="353" y="227" font-size="13" fill="#edebfa" text-anchor="start">instruction override, forged system turns, chat-template</text>
+  <text class="t" x="353" y="245" font-size="13" fill="#edebfa" text-anchor="start">tokens, hidden-from-user directives, exfiltration directives,…</text>
+  <rect x="28" y="267" width="113" height="19" rx="4.0" fill="#222130"/>
+  <text class="t" x="34" y="280" font-size="12" fill="#edebfa" text-anchor="start">hidden_unicode</text>
+  <text class="t" x="169" y="280" font-size="13" fill="#edebfa" text-anchor="start">both</text>
+  <text class="t" x="353" y="280" font-size="13" fill="#edebfa" text-anchor="start">zero-width, bidi-override and unicode tag characters, plus runs</text>
+  <text class="t" x="353" y="298" font-size="13" fill="#edebfa" text-anchor="start">of variation selectors (one byte each) — payloads that render</text>
+  <text class="t" x="353" y="316" font-size="13" fill="#edebfa" text-anchor="start">as nothing and survive copy-paste.</text>
+  <rect x="20" y="327" width="840" height="71" rx="5.0" fill="#222130"/>
+  <rect x="28" y="338" width="91" height="19" rx="4.0" fill="#222130"/>
+  <text class="t" x="34" y="351" font-size="12" fill="#edebfa" text-anchor="start">tool_policy</text>
+  <text class="t" x="169" y="351" font-size="13" fill="#edebfa" text-anchor="start">outbound</text>
+  <text class="t" x="353" y="351" font-size="13" fill="#edebfa" text-anchor="start">~19 command shapes: destructive deletes, curl | sh, reverse</text>
+  <text class="t" x="353" y="369" font-size="13" fill="#edebfa" text-anchor="start">shells, credential-file reads, keychain dumps, persistence,</text>
+  <text class="t" x="353" y="387" font-size="13" fill="#edebfa" text-anchor="start">encoded execution, history tampering.</text>
+  <rect x="28" y="409" width="55" height="19" rx="4.0" fill="#222130"/>
+  <text class="t" x="34" y="422" font-size="12" fill="#edebfa" text-anchor="start">egress</text>
+  <text class="t" x="169" y="422" font-size="13" fill="#edebfa" text-anchor="start">outbound and inbound</text>
+  <text class="t" x="353" y="422" font-size="13" fill="#edebfa" text-anchor="start">destination control: a deny list, 31 known anonymous drop</text>
+  <text class="t" x="353" y="440" font-size="13" fill="#edebfa" text-anchor="start">sites, SSRF and metadata addresses (including decimal/hex</text>
+  <text class="t" x="353" y="458" font-size="13" fill="#edebfa" text-anchor="start">loopback encodings), DNS-tunnelling subdomain entropy, encoded</text>
+  <text class="t" x="353" y="476" font-size="13" fill="#edebfa" text-anchor="start">payloads in a path or query. Also applied to the URLs an answer…</text>
+  <rect x="28" y="487" width="824" height="1" fill="#35334a"/>
+</svg>
