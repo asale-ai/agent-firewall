@@ -140,7 +140,7 @@
   <text class="t" x="74" y="432" font-size="12" fill="#8b87a3" text-anchor="start">The README is carrying all of the documentation. Split `docs/` out before it grows further — a README sho…</text>
   <text class="t" x="74" y="452" font-size="12" fill="#8b87a3" text-anchor="start">+4 more — run repolish -v</text>
   <rect x="36" y="472" width="808" height="1" fill="#35334a"/>
-  <text class="t" x="36" y="496" font-size="12" fill="#8b87a3" text-anchor="start">asale-ai/agent-firewall · 732a64df</text>
-  <text class="t" x="844" y="496" font-size="12" fill="#8b87a3" text-anchor="end">repolish v0.4.1</text>
+  <text class="t" x="36" y="496" font-size="12" fill="#8b87a3" text-anchor="start">asale-ai/agent-firewall · bea49b73</text>
+  <text class="t" x="844" y="496" font-size="12" fill="#8b87a3" text-anchor="end">repolish v0.5.0</text>
   <text class="t" x="36" y="514" font-size="11" fill="#8b87a3" text-anchor="start">Scoring is deterministic. No model is involved.</text>
 </svg>

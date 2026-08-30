@@ -95,7 +95,7 @@
   <text class="t" x="121" y="165" font-size="14" fill="#edebfa" text-anchor="start" font-weight="700">1</text>
   <text class="t" x="135" y="165" font-size="12" fill="#8b87a3" text-anchor="start">languages</text>
   <text class="t" x="212" y="165" font-size="13" fill="#35334a" text-anchor="start">·</text>
-  <text class="t" x="226" y="165" font-size="14" fill="#edebfa" text-anchor="start" font-weight="700">11</text>
+  <text class="t" x="226" y="165" font-size="14" fill="#edebfa" text-anchor="start" font-weight="700">13</text>
   <text class="t" x="249" y="165" font-size="12" fill="#8b87a3" text-anchor="start">commits</text>
   <text class="t" x="311" y="165" font-size="13" fill="#35334a" text-anchor="start">·</text>
   <text class="t" x="325" y="165" font-size="14" fill="#edebfa" text-anchor="start" font-weight="700">5</text>
@@ -149,13 +149,13 @@
   <text class="t" x="330" y="387" font-size="12" fill="#8b87a3" text-anchor="start">config</text>
   <text class="t" x="379" y="387" font-size="12" fill="#edebfa" text-anchor="start">8%</text>
   <text class="t" x="36" y="415" font-size="11" fill="#8b87a3" text-anchor="start" letter-spacing="1.4">COMMIT ACTIVITY · 52w</text>
-  <text class="t" x="844" y="415" font-size="12" fill="#8b87a3" text-anchor="end">10 PEAK</text>
+  <text class="t" x="844" y="415" font-size="12" fill="#8b87a3" text-anchor="end">12 PEAK</text>
   <rect x="36" y="429" width="808" height="66" rx="6.0" fill="#222130"/>
   <line x1="44" y1="437" x2="836" y2="437" stroke="#35334a" stroke-width="1" stroke-dasharray="3 5"/>
-  <path d="M44.0 487.0 L59.5 487.0 L75.1 487.0 L90.6 487.0 L106.1 487.0 L121.6 487.0 L137.2 487.0 L152.7 487.0 L168.2 487.0 L183.8 487.0 L199.3 487.0 L214.8 487.0 L230.4 487.0 L245.9 487.0 L261.4 487.0 L276.9 487.0 L292.5 487.0 L308.0 487.0 L323.5 487.0 L339.1 487.0 L354.6 487.0 L370.1 487.0 L385.6 487.0 L401.2 487.0 L416.7 487.0 L432.2 487.0 L447.8 487.0 L463.3 487.0 L478.8 487.0 L494.4 487.0 L509.9 487.0 L525.4 487.0 L540.9 487.0 L556.5 487.0 L572.0 487.0 L587.5 487.0 L603.1 487.0 L618.6 487.0 L634.1 487.0 L649.6 487.0 L665.2 487.0 L680.7 487.0 L696.2 487.0 L711.8 487.0 L727.3 487.0 L742.8 487.0 L758.4 487.0 L773.9 487.0 L789.4 487.0 L804.9 487.0 L820.5 437.0 L836.0 482.0 L836.0 487 L44 487 Z" fill="#43e5d0" fill-opacity="0.35"/>
-  <path d="M44.0 487.0 L59.5 487.0 L75.1 487.0 L90.6 487.0 L106.1 487.0 L121.6 487.0 L137.2 487.0 L152.7 487.0 L168.2 487.0 L183.8 487.0 L199.3 487.0 L214.8 487.0 L230.4 487.0 L245.9 487.0 L261.4 487.0 L276.9 487.0 L292.5 487.0 L308.0 487.0 L323.5 487.0 L339.1 487.0 L354.6 487.0 L370.1 487.0 L385.6 487.0 L401.2 487.0 L416.7 487.0 L432.2 487.0 L447.8 487.0 L463.3 487.0 L478.8 487.0 L494.4 487.0 L509.9 487.0 L525.4 487.0 L540.9 487.0 L556.5 487.0 L572.0 487.0 L587.5 487.0 L603.1 487.0 L618.6 487.0 L634.1 487.0 L649.6 487.0 L665.2 487.0 L680.7 487.0 L696.2 487.0 L711.8 487.0 L727.3 487.0 L742.8 487.0 L758.4 487.0 L773.9 487.0 L789.4 487.0 L804.9 487.0 L820.5 437.0 L836.0 482.0" fill="none" stroke="#43e5d0" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+  <path d="M44.0 487.0 L59.5 487.0 L75.1 487.0 L90.6 487.0 L106.1 487.0 L121.6 487.0 L137.2 487.0 L152.7 487.0 L168.2 487.0 L183.8 487.0 L199.3 487.0 L214.8 487.0 L230.4 487.0 L245.9 487.0 L261.4 487.0 L276.9 487.0 L292.5 487.0 L308.0 487.0 L323.5 487.0 L339.1 487.0 L354.6 487.0 L370.1 487.0 L385.6 487.0 L401.2 487.0 L416.7 487.0 L432.2 487.0 L447.8 487.0 L463.3 487.0 L478.8 487.0 L494.4 487.0 L509.9 487.0 L525.4 487.0 L540.9 487.0 L556.5 487.0 L572.0 487.0 L587.5 487.0 L603.1 487.0 L618.6 487.0 L634.1 487.0 L649.6 487.0 L665.2 487.0 L680.7 487.0 L696.2 487.0 L711.8 487.0 L727.3 487.0 L742.8 487.0 L758.4 487.0 L773.9 487.0 L789.4 487.0 L804.9 487.0 L820.5 437.0 L836.0 482.8 L836.0 487 L44 487 Z" fill="#43e5d0" fill-opacity="0.35"/>
+  <path d="M44.0 487.0 L59.5 487.0 L75.1 487.0 L90.6 487.0 L106.1 487.0 L121.6 487.0 L137.2 487.0 L152.7 487.0 L168.2 487.0 L183.8 487.0 L199.3 487.0 L214.8 487.0 L230.4 487.0 L245.9 487.0 L261.4 487.0 L276.9 487.0 L292.5 487.0 L308.0 487.0 L323.5 487.0 L339.1 487.0 L354.6 487.0 L370.1 487.0 L385.6 487.0 L401.2 487.0 L416.7 487.0 L432.2 487.0 L447.8 487.0 L463.3 487.0 L478.8 487.0 L494.4 487.0 L509.9 487.0 L525.4 487.0 L540.9 487.0 L556.5 487.0 L572.0 487.0 L587.5 487.0 L603.1 487.0 L618.6 487.0 L634.1 487.0 L649.6 487.0 L665.2 487.0 L680.7 487.0 L696.2 487.0 L711.8 487.0 L727.3 487.0 L742.8 487.0 L758.4 487.0 L773.9 487.0 L789.4 487.0 L804.9 487.0 L820.5 437.0 L836.0 482.8" fill="none" stroke="#43e5d0" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
   <text class="t" x="36" y="509" font-size="11" fill="#8b87a3" text-anchor="start">-52w</text>
-  <text class="t" x="844" y="509" font-size="11" fill="#8b87a3" text-anchor="end">1d ago</text>
+  <text class="t" x="844" y="509" font-size="11" fill="#8b87a3" text-anchor="end">today</text>
   <!--star-history-->
   <text class="t" x="36" y="537" font-size="11" fill="#8b87a3" text-anchor="start" letter-spacing="1.4">STARS</text>
   <text class="t" x="844" y="537" font-size="12" fill="#8b87a3" text-anchor="end">1 stars</text>
@@ -166,5 +166,5 @@
   <text class="t" x="844" y="631" font-size="11" fill="#8b87a3" text-anchor="end">2026-08</text>
   <rect x="36" y="653" width="808" height="1" fill="#35334a"/>
   <text class="t" x="36" y="677" font-size="12" fill="#8b87a3" text-anchor="start">asale-ai/agent-firewall · main · cargo</text>
-  <text class="t" x="844" y="677" font-size="12" fill="#8b87a3" text-anchor="end">generated by repolish v0.4.1</text>
+  <text class="t" x="844" y="677" font-size="12" fill="#8b87a3" text-anchor="end">generated by repolish v0.5.0</text>
 </svg>
